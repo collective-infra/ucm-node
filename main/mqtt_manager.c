@@ -61,6 +61,11 @@
 #define FW_BUILD_TIME "unknown"
 #endif
 
+// Interval for the heartbeat message.
+// 60 * 1000000 = 60,000,000 microseconds = 60 seconds.
+#define HEARTBEAT_INTERVAL_US (60LL * 1000000LL)
+static int64_t s_last_heartbeat_us = 0;
+
 // Broker address as an mDNS hostname (".local") rather than a static IP,
 // so this doesn't need to be reconfigured if the broker's IP changes --
 // relies on mDNS resolution being available on the network.
@@ -500,8 +505,15 @@ esp_err_t mqtt_manager_publish_heartbeat(sen54_data_t *data)
         return ESP_FAIL;
     }
 
+    int64_t now_us = esp_timer_get_time();
+    if (s_last_heartbeat_us != 0 &&
+        (now_us - s_last_heartbeat_us) < HEARTBEAT_INTERVAL_US) {
+        return ESP_OK;
+    }
+    s_last_heartbeat_us = now_us;
+
     uint32_t free_heap = esp_get_free_heap_size();
-    int64_t uptime_s = esp_timer_get_time() / 1000000;
+    int64_t uptime_s = now_us / 1000000;
 
     int8_t rssi = 0;
     wifi_ap_record_t ap_info;
