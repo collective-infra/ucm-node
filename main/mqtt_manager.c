@@ -54,6 +54,13 @@
 #include "esp_timer.h"       // esp_timer_get_time(), used to compute uptime for the heartbeat
 #include "app_wifi_prov.h"   // app_wifi_prov_reset_credentials(), used by the remote "provision" command
 
+#ifndef FW_COMMIT_HASH
+#define FW_COMMIT_HASH "unknown"
+#endif
+#ifndef FW_BUILD_TIME
+#define FW_BUILD_TIME "unknown"
+#endif
+
 // Broker address as an mDNS hostname (".local") rather than a static IP,
 // so this doesn't need to be reconfigured if the broker's IP changes --
 // relies on mDNS resolution being available on the network.
@@ -94,9 +101,11 @@ static char s_lwt_payload[96];
  */
 static void publish_online_status(void)
 {
-    char payload[96];
+    char payload[192];
     snprintf(payload, sizeof(payload),
-             "{\"node\":\"%s\",\"status\":\"online\"}", s_node_id);
+             "{\"node\":\"%s\",\"status\":\"online\","
+             "\"fw_commit_hash\":\"%s\",\"fw_build_time\":\"%s\"}",
+             s_node_id, FW_COMMIT_HASH, FW_BUILD_TIME);
 
     esp_mqtt_client_publish(mqtt_client, s_status_topic, payload,
                              0, /* qos */ 1, /* retain */ 1);
@@ -367,7 +376,7 @@ esp_err_t mqtt_manager_publish_node_info(sen54_data_t *data)
         return ESP_FAIL;
     }
 
-    char payload[256];
+    char payload[384];
 
     snprintf(payload, sizeof(payload),
              "{"
@@ -375,13 +384,18 @@ esp_err_t mqtt_manager_publish_node_info(sen54_data_t *data)
              "\"name\":\"%s\","
              "\"description\":\"%s\","
              "\"lat\":%.5f,"
-             "\"lon\":%.5f"
+             "\"lon\":%.5f,"
+             "\"fw_commit_hash\":\"%s\","
+             "\"fw_build_time\":\"%s\""
              "}",
              data->node_id,
              data->node_name,
              data->description,
              data->latitude,
-             data->longitude);
+             data->longitude,
+             FW_COMMIT_HASH,
+             FW_BUILD_TIME
+            );
 
     char topic[64];
     snprintf(topic, sizeof(topic), "ucm/node-%s/info", data->node_id);

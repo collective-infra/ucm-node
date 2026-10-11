@@ -30,6 +30,13 @@
 #include "esp_log.h"
 #include "sen54_data.h"   // current_sensor_data -- the shared struct this server reads from
 
+#ifndef FW_COMMIT_HASH
+#define FW_COMMIT_HASH "unknown"
+#endif
+#ifndef FW_BUILD_TIME
+#define FW_BUILD_TIME "unknown"
+#endif
+
 static const char *TAG = "WEB_SERVER";
 
 /**
@@ -78,6 +85,7 @@ static esp_err_t root_handler(httpd_req_t *req)
         "h1 { font-size: 28px; }"
         ".card { border: 1px solid #ccc; border-radius: 8px; padding: 15px; margin-bottom: 15px; }"
         ".value { font-size: 24px; font-weight: bold; }"
+        ".fw { font-size: 11px; color: #888; margin-top: 20px; }"
         "</style>"
         "</head>"
 
@@ -108,6 +116,7 @@ static esp_err_t root_handler(httpd_req_t *req)
         "<p>Location: <span id='location'>--</span></p>"
         "<p>Last Reading: <span id='timestamp'>--</span></p>"
         "</div>"
+        "<p class='fw'>Firmware: " FW_COMMIT_HASH " &middot; Built: " FW_BUILD_TIME "</p>"
 
         "<script>"
         "function updateData() {"
