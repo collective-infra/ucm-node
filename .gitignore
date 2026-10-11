@@ -14,3 +14,6 @@ sdkconfig.old
 # Operating system files
 Thumbs.db
 .DS_Store
+
+# File wtih mqtt password
+main/secrets.h

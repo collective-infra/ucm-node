@@ -45,6 +45,7 @@
 
 #include "mqtt_manager.h"
 #include "ota_manager.h"
+#include "secrets.h"
 
 #include "mqtt_client.h"
 #include "esp_log.h"
@@ -74,6 +75,7 @@ static esp_mqtt_client_handle_t mqtt_client = NULL;
 // pointers handed to esp-mqtt at connect time must remain valid for as
 // long as the client is running).
 static char s_node_id[32];
+static char s_username[40];
 static char s_status_topic[64];
 static char s_lwt_payload[96];
 
@@ -305,12 +307,16 @@ esp_err_t mqtt_manager_start(const char *node_id)
     strncpy(s_node_id, node_id, sizeof(s_node_id) - 1);
     s_node_id[sizeof(s_node_id) - 1] = '\0';
 
+    snprintf(s_username, sizeof(s_username), "node-%s", s_node_id);
+
     snprintf(s_status_topic, sizeof(s_status_topic), "ucm/node-%s/status", s_node_id);
     snprintf(s_lwt_payload, sizeof(s_lwt_payload),
              "{\"node\":\"%s\",\"status\":\"offline\"}", s_node_id);
 
     esp_mqtt_client_config_t mqtt_cfg = {
         .broker.address.uri = MQTT_BROKER_URI,
+        .credentials.username = s_username,
+        .credentials.authentication.password = MQTT_PASSWORD,
         .session.last_will.topic = s_status_topic,
         .session.last_will.msg = s_lwt_payload,
         .session.last_will.msg_len = strlen(s_lwt_payload),
