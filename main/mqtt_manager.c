@@ -87,7 +87,6 @@ static esp_mqtt_client_handle_t mqtt_client = NULL;
 // pointers handed to esp-mqtt at connect time must remain valid for as
 // long as the client is running).
 static char s_node_id[32];
-static char s_username[40];
 static char s_status_topic[64];
 static char s_lwt_payload[96];
 
@@ -164,6 +163,7 @@ static void ota_update_task(void *pvParameters)
 
     vTaskDelete(NULL);
 }
+
 static void mqtt_event_handler(void *handler_args,
                                esp_event_base_t base,
                                int32_t event_id,
@@ -321,15 +321,13 @@ esp_err_t mqtt_manager_start(const char *node_id)
     strncpy(s_node_id, node_id, sizeof(s_node_id) - 1);
     s_node_id[sizeof(s_node_id) - 1] = '\0';
 
-    snprintf(s_username, sizeof(s_username), "node-%s", s_node_id);
-
     snprintf(s_status_topic, sizeof(s_status_topic), "ucm/node-%s/status", s_node_id);
     snprintf(s_lwt_payload, sizeof(s_lwt_payload),
              "{\"node\":\"%s\",\"status\":\"offline\"}", s_node_id);
 
     esp_mqtt_client_config_t mqtt_cfg = {
         .broker.address.uri = MQTT_BROKER_URI,
-        .credentials.username = s_username,
+        .credentials.username = MQTT_USERNAME,
         .credentials.authentication.password = MQTT_PASSWORD,
         .session.last_will.topic = s_status_topic,
         .session.last_will.msg = s_lwt_payload,
