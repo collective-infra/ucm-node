@@ -18,3 +18,5 @@ Thumbs.db
 
 # File wtih mqtt password
 main/secrets.h
+
+*.ignore
