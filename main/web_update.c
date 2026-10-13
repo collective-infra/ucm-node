@@ -22,6 +22,13 @@
 #include "secrets.h"
 #include "web_update.h"
 
+#ifndef FW_COMMIT_HASH
+#define FW_COMMIT_HASH "unknown"
+#endif
+#ifndef FW_BUILD_TIME
+#define FW_BUILD_TIME "unknown"
+#endif
+
 static const char *TAG = "WEB_UPDATE";
 
 static const char update_page[] =
@@ -31,6 +38,7 @@ static const char update_page[] =
     "<style>body{font-family:Arial,sans-serif;margin:20px}progress{width:100%}</style>"
     "</head><body>"
     "<h1>Firmware update</h1>"
+    "<p>Running: " FW_COMMIT_HASH " &middot; " FW_BUILD_TIME "</p>"
     "<p>Choose the application .bin (not the bootloader or a merged image). "
     "The node reboots when the upload finishes.</p>"
     "<input type='file' id='f' accept='.bin'> <button id='b'>Upload</button>"
