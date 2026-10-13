@@ -29,6 +29,7 @@
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "sen54_data.h"   // current_sensor_data -- the shared struct this server reads from
+#include "web_update.h"
 
 #ifndef FW_COMMIT_HASH
 #define FW_COMMIT_HASH "unknown"
@@ -243,6 +244,8 @@ static esp_err_t data_handler(httpd_req_t *req)
 void start_webserver(void)
 {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+    config.stack_size = 8192;
+    config.recv_wait_timeout = 30;
     httpd_handle_t server = NULL;
     if (httpd_start(&server, &config) == ESP_OK) {
         httpd_uri_t root = {
@@ -261,6 +264,10 @@ void start_webserver(void)
         };
         httpd_register_uri_handler(server, &data);
 
+        web_update_register(server);
+
         ESP_LOGI(TAG, "Web server started");
+    } else {
+        ESP_LOGE(TAG, "Failed to start web server");
     }
 }
