@@ -210,78 +210,108 @@ static void mqtt_event_handler(void *handler_args,
         break;
 
 
-case MQTT_EVENT_DATA:
+    case MQTT_EVENT_DATA:
 
-    ESP_LOGI(TAG, "MQTT command topic: %.*s",
-             event->topic_len, event->topic);
+        ESP_LOGI(TAG, "MQTT command topic: %.*s",
+                event->topic_len, event->topic);
 
-    ESP_LOGI(TAG, "MQTT command data: %.*s",
-             event->data_len, event->data);
-
-
-    /*
-     * ---------------------------------------------------------
-     * PROVISION COMMAND
-     * ---------------------------------------------------------
-     */
-
-    static const char *provision_command =
-        "{\"command\":\"provision\"}";
-
-    size_t provision_command_len =
-        strlen(provision_command);
-
-    if (event->data_len == provision_command_len &&
-        memcmp(event->data,
-               provision_command,
-               provision_command_len) == 0) {
-
-        ESP_LOGW(TAG, "Provision command received");
-
-        app_wifi_prov_reset_credentials();
-
-        vTaskDelay(pdMS_TO_TICKS(1000));
-
-        esp_restart();
-    }
+        ESP_LOGI(TAG, "MQTT command data: %.*s",
+                event->data_len, event->data);
 
 
-    /*
-     * ---------------------------------------------------------
-     * OTA COMMAND
-     * ---------------------------------------------------------
-     */
+        /*
+        * ---------------------------------------------------------
+        * PROVISION COMMAND
+        * ---------------------------------------------------------
+        */
 
-   static const char *ota_command =
-    "{\"command\":\"ota\"}";
+        static const char *provision_command =
+            "{\"command\":\"provision\"}";
 
-size_t ota_command_len =
-    strlen(ota_command);
+        size_t provision_command_len =
+            strlen(provision_command);
 
-if (event->data_len == ota_command_len &&
-    memcmp(event->data,
-           ota_command,
-           ota_command_len) == 0) {
+        if (event->data_len == provision_command_len &&
+            memcmp(event->data,
+                provision_command,
+                provision_command_len) == 0) {
 
-    ESP_LOGW(TAG, "OTA command received");
+            ESP_LOGW(TAG, "Provision command received");
+            if (ota_manager_is_busy()) {
+                ESP_LOGW(TAG, "Provision command ignored: update in progress");
+            } else {
+                app_wifi_prov_reset_credentials();
+                vTaskDelay(pdMS_TO_TICKS(1000));
+                esp_restart();
+            }
+        }
 
-    BaseType_t task_result =
-        xTaskCreate(
-            ota_update_task,
-            "ota_update",
-            8192,
-            NULL,
-            5,
-            NULL
-        );
+        /*
+        * ---------------------------------------------------------
+        * OTA COMMAND
+        * ---------------------------------------------------------
+        */
 
-    if (task_result != pdPASS) {
-        ESP_LOGE(TAG, "Failed to create OTA task");
-    }
-}
+        static const char *ota_command = 
+            "{\"command\":\"ota\"}";
 
-    break;
+        size_t ota_command_len =
+            strlen(ota_command);
 
+        if (event->data_len == ota_command_len &&
+            memcmp(event->data,
+                ota_command,
+                ota_command_len) == 0) {
+
+            ESP_LOGW(TAG, "OTA command received");
+
+            if (ota_manager_is_busy()) {
+                ESP_LOGW(TAG, "OTA command ignored: update in progress");
+            } else {
+                BaseType_t task_result =
+                xTaskCreate(
+                    ota_update_task,
+                    "ota_update",
+                    8192,
+                    NULL,
+                    5,
+                    NULL
+                );
+
+                if (task_result != pdPASS) {
+                    ESP_LOGE(TAG, "Failed to create OTA task");
+                }
+            }
+        }
+
+        /*
+        * ---------------------------------------------------------
+        * RESTART COMMAND
+        * ---------------------------------------------------------
+        */
+
+        static const char *restart_command =
+            "{\"command\":\"restart\"}";
+
+        size_t restart_command_len =
+            strlen(restart_command);
+
+        if (event->data_len == restart_command_len &&
+            memcmp(event->data,
+                restart_command,
+                restart_command_len) == 0) {
+
+            ESP_LOGW(TAG, "Restart command received");
+
+            if (ota_manager_is_busy()) {
+                ESP_LOGW(TAG, "Restart command ignored: update in progress");
+            } else {
+                vTaskDelay(pdMS_TO_TICKS(1000));
+                esp_restart();
+            }
+        }
+
+        break;
 
     default:
         break;
