@@ -80,6 +80,9 @@ static const char *TAG = "MQTT_MANAGER";
 // start or if start was never called/succeeded.
 static esp_mqtt_client_handle_t mqtt_client = NULL;
 
+// Format: UCM-<node_id>
+// node_id is the last chars of the ESP's MAC Address.
+// Example: UCM-E0B20F
 // Module-level state populated once in mqtt_manager_start() and reused by
 // publish_online_status() and the LWT (Last Will and Testament) config;
 // kept as fixed-size buffers rather than allocated per-call since they're
@@ -327,6 +330,7 @@ esp_err_t mqtt_manager_start(const char *node_id)
 
     esp_mqtt_client_config_t mqtt_cfg = {
         .broker.address.uri = MQTT_BROKER_URI,
+        .credentials.client_id = s_node_id, // UCM-<end of MAC>. Needed for ACL
         .credentials.username = MQTT_USERNAME,
         .credentials.authentication.password = MQTT_PASSWORD,
         .session.last_will.topic = s_status_topic,
