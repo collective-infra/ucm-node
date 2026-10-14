@@ -27,6 +27,8 @@ A store-and-forward mechanism for buffering measurements during network outages 
 
 ---
 
+[Build Instructions](build-instructions.md)
+
 # System Architecture
 
 ```text
