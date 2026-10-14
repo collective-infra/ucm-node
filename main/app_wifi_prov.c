@@ -66,6 +66,8 @@
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
 #include "mdns.h"
+#include "web_server.h"
+#include "ota_manager.h"
 
 static const char *TAG = "app_wifi_prov";
 
@@ -333,6 +335,17 @@ static esp_err_t save_post_handler(httpd_req_t *req)
     return ESP_OK; // unreachable
 }
 
+esp_err_t app_wifi_prov_register_http(httpd_handle_t server)
+{
+    httpd_uri_t form_uri = { .uri = "/setup", .method = HTTP_GET,  .handler = form_get_handler };
+    httpd_uri_t save_uri = { .uri = "/save",  .method = HTTP_POST, .handler = save_post_handler };
+    esp_err_t err = httpd_register_uri_handler(server, &form_uri);
+    if (err == ESP_OK) {
+        err = httpd_register_uri_handler(server, &save_uri);
+    }
+    return err;
+}
+
 /**
  * @brief Starts the local open Wi-Fi setup access point and the
  *        captive-portal-style HTTP server serving the setup form, then
@@ -385,16 +398,12 @@ static void start_setup_server_and_ap(void)
     ESP_LOGI(TAG, "Setup AP started: %s (open network)", SETUP_AP_SSID);
     ESP_LOGI(TAG, "Connect your phone to it, then open http://192.168.4.1");
 
-    httpd_config_t http_cfg = HTTPD_DEFAULT_CONFIG();
-    httpd_handle_t server = NULL;
-    ESP_ERROR_CHECK(httpd_start(&server, &http_cfg));
-
-    httpd_uri_t form_uri = { .uri = "/", .method = HTTP_GET, .handler = form_get_handler };
-    httpd_uri_t save_uri = { .uri = "/save", .method = HTTP_POST, .handler = save_post_handler };
-    httpd_register_uri_handler(server, &form_uri);
-    httpd_register_uri_handler(server, &save_uri);
+    ESP_ERROR_CHECK(web_server_start(WEB_SERVER_MODE_SETUP) ? ESP_OK : ESP_FAIL);
 
     ESP_LOGI(TAG, "Setup web server started");
+    // Setup mode never reaches app_main()'s confirm call. Confirm here so a
+    // freshly flashed image isn't rolled back on the next reboot.
+    ota_manager_confirm_running_image();
 
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(10000));

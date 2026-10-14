@@ -45,6 +45,7 @@
 
 #include "mqtt_manager.h"
 #include "ota_manager.h"
+#include "secrets.h"
 
 #include "mqtt_client.h"
 #include "esp_log.h"
@@ -52,6 +53,18 @@
 #include "esp_wifi.h"        // esp_wifi_sta_get_ap_info(), used to read Wi-Fi RSSI for the heartbeat
 #include "esp_timer.h"       // esp_timer_get_time(), used to compute uptime for the heartbeat
 #include "app_wifi_prov.h"   // app_wifi_prov_reset_credentials(), used by the remote "provision" command
+
+#ifndef FW_COMMIT_HASH
+#define FW_COMMIT_HASH "unknown"
+#endif
+#ifndef FW_BUILD_TIME
+#define FW_BUILD_TIME "unknown"
+#endif
+
+// Interval for the heartbeat message.
+// 60 * 1000000 = 60,000,000 microseconds = 60 seconds.
+#define HEARTBEAT_INTERVAL_US (60LL * 1000000LL)
+static int64_t s_last_heartbeat_us = 0;
 
 // Broker address as an mDNS hostname (".local") rather than a static IP,
 // so this doesn't need to be reconfigured if the broker's IP changes --
@@ -67,6 +80,9 @@ static const char *TAG = "MQTT_MANAGER";
 // start or if start was never called/succeeded.
 static esp_mqtt_client_handle_t mqtt_client = NULL;
 
+// Format: UCM-<node_id>
+// node_id is the last chars of the ESP's MAC Address.
+// Example: UCM-E0B20F
 // Module-level state populated once in mqtt_manager_start() and reused by
 // publish_online_status() and the LWT (Last Will and Testament) config;
 // kept as fixed-size buffers rather than allocated per-call since they're
@@ -92,9 +108,11 @@ static char s_lwt_payload[96];
  */
 static void publish_online_status(void)
 {
-    char payload[96];
+    char payload[192];
     snprintf(payload, sizeof(payload),
-             "{\"node\":\"%s\",\"status\":\"online\"}", s_node_id);
+             "{\"node\":\"%s\",\"status\":\"online\","
+             "\"fw_commit_hash\":\"%s\",\"fw_build_time\":\"%s\"}",
+             s_node_id, FW_COMMIT_HASH, FW_BUILD_TIME);
 
     esp_mqtt_client_publish(mqtt_client, s_status_topic, payload,
                              0, /* qos */ 1, /* retain */ 1);
@@ -148,6 +166,7 @@ static void ota_update_task(void *pvParameters)
 
     vTaskDelete(NULL);
 }
+
 static void mqtt_event_handler(void *handler_args,
                                esp_event_base_t base,
                                int32_t event_id,
@@ -191,78 +210,108 @@ static void mqtt_event_handler(void *handler_args,
         break;
 
 
-case MQTT_EVENT_DATA:
+    case MQTT_EVENT_DATA:
 
-    ESP_LOGI(TAG, "MQTT command topic: %.*s",
-             event->topic_len, event->topic);
+        ESP_LOGI(TAG, "MQTT command topic: %.*s",
+                event->topic_len, event->topic);
 
-    ESP_LOGI(TAG, "MQTT command data: %.*s",
-             event->data_len, event->data);
-
-
-    /*
-     * ---------------------------------------------------------
-     * PROVISION COMMAND
-     * ---------------------------------------------------------
-     */
-
-    static const char *provision_command =
-        "{\"command\":\"provision\"}";
-
-    size_t provision_command_len =
-        strlen(provision_command);
-
-    if (event->data_len == provision_command_len &&
-        memcmp(event->data,
-               provision_command,
-               provision_command_len) == 0) {
-
-        ESP_LOGW(TAG, "Provision command received");
-
-        app_wifi_prov_reset_credentials();
-
-        vTaskDelay(pdMS_TO_TICKS(1000));
-
-        esp_restart();
-    }
+        ESP_LOGI(TAG, "MQTT command data: %.*s",
+                event->data_len, event->data);
 
 
-    /*
-     * ---------------------------------------------------------
-     * OTA COMMAND
-     * ---------------------------------------------------------
-     */
+        /*
+        * ---------------------------------------------------------
+        * PROVISION COMMAND
+        * ---------------------------------------------------------
+        */
 
-   static const char *ota_command =
-    "{\"command\":\"ota\"}";
+        static const char *provision_command =
+            "{\"command\":\"provision\"}";
 
-size_t ota_command_len =
-    strlen(ota_command);
+        size_t provision_command_len =
+            strlen(provision_command);
 
-if (event->data_len == ota_command_len &&
-    memcmp(event->data,
-           ota_command,
-           ota_command_len) == 0) {
+        if (event->data_len == provision_command_len &&
+            memcmp(event->data,
+                provision_command,
+                provision_command_len) == 0) {
 
-    ESP_LOGW(TAG, "OTA command received");
+            ESP_LOGW(TAG, "Provision command received");
+            if (ota_manager_is_busy()) {
+                ESP_LOGW(TAG, "Provision command ignored: update in progress");
+            } else {
+                app_wifi_prov_reset_credentials();
+                vTaskDelay(pdMS_TO_TICKS(1000));
+                esp_restart();
+            }
+        }
 
-    BaseType_t task_result =
-        xTaskCreate(
-            ota_update_task,
-            "ota_update",
-            8192,
-            NULL,
-            5,
-            NULL
-        );
+        /*
+        * ---------------------------------------------------------
+        * OTA COMMAND
+        * ---------------------------------------------------------
+        */
 
-    if (task_result != pdPASS) {
-        ESP_LOGE(TAG, "Failed to create OTA task");
-    }
-}
+        static const char *ota_command = 
+            "{\"command\":\"ota\"}";
 
-    break;
+        size_t ota_command_len =
+            strlen(ota_command);
 
+        if (event->data_len == ota_command_len &&
+            memcmp(event->data,
+                ota_command,
+                ota_command_len) == 0) {
+
+            ESP_LOGW(TAG, "OTA command received");
+
+            if (ota_manager_is_busy()) {
+                ESP_LOGW(TAG, "OTA command ignored: update in progress");
+            } else {
+                BaseType_t task_result =
+                xTaskCreate(
+                    ota_update_task,
+                    "ota_update",
+                    8192,
+                    NULL,
+                    5,
+                    NULL
+                );
+
+                if (task_result != pdPASS) {
+                    ESP_LOGE(TAG, "Failed to create OTA task");
+                }
+            }
+        }
+
+        /*
+        * ---------------------------------------------------------
+        * RESTART COMMAND
+        * ---------------------------------------------------------
+        */
+
+        static const char *restart_command =
+            "{\"command\":\"restart\"}";
+
+        size_t restart_command_len =
+            strlen(restart_command);
+
+        if (event->data_len == restart_command_len &&
+            memcmp(event->data,
+                restart_command,
+                restart_command_len) == 0) {
+
+            ESP_LOGW(TAG, "Restart command received");
+
+            if (ota_manager_is_busy()) {
+                ESP_LOGW(TAG, "Restart command ignored: update in progress");
+            } else {
+                vTaskDelay(pdMS_TO_TICKS(1000));
+                esp_restart();
+            }
+        }
+
+        break;
 
     default:
         break;
@@ -311,6 +360,9 @@ esp_err_t mqtt_manager_start(const char *node_id)
 
     esp_mqtt_client_config_t mqtt_cfg = {
         .broker.address.uri = MQTT_BROKER_URI,
+        .credentials.client_id = s_node_id, // UCM-<end of MAC>. Needed for ACL
+        .credentials.username = MQTT_USERNAME,
+        .credentials.authentication.password = MQTT_PASSWORD,
         .session.last_will.topic = s_status_topic,
         .session.last_will.msg = s_lwt_payload,
         .session.last_will.msg_len = strlen(s_lwt_payload),
@@ -361,7 +413,7 @@ esp_err_t mqtt_manager_publish_node_info(sen54_data_t *data)
         return ESP_FAIL;
     }
 
-    char payload[256];
+    char payload[384];
 
     snprintf(payload, sizeof(payload),
              "{"
@@ -369,13 +421,18 @@ esp_err_t mqtt_manager_publish_node_info(sen54_data_t *data)
              "\"name\":\"%s\","
              "\"description\":\"%s\","
              "\"lat\":%.5f,"
-             "\"lon\":%.5f"
+             "\"lon\":%.5f,"
+             "\"fw_commit_hash\":\"%s\","
+             "\"fw_build_time\":\"%s\""
              "}",
              data->node_id,
              data->node_name,
              data->description,
              data->latitude,
-             data->longitude);
+             data->longitude,
+             FW_COMMIT_HASH,
+             FW_BUILD_TIME
+            );
 
     char topic[64];
     snprintf(topic, sizeof(topic), "ucm/node-%s/info", data->node_id);
@@ -480,8 +537,15 @@ esp_err_t mqtt_manager_publish_heartbeat(sen54_data_t *data)
         return ESP_FAIL;
     }
 
+    int64_t now_us = esp_timer_get_time();
+    if (s_last_heartbeat_us != 0 &&
+        (now_us - s_last_heartbeat_us) < HEARTBEAT_INTERVAL_US) {
+        return ESP_OK;
+    }
+    s_last_heartbeat_us = now_us;
+
     uint32_t free_heap = esp_get_free_heap_size();
-    int64_t uptime_s = esp_timer_get_time() / 1000000;
+    int64_t uptime_s = now_us / 1000000;
 
     int8_t rssi = 0;
     wifi_ap_record_t ap_info;

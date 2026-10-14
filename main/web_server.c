@@ -29,8 +29,32 @@
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "sen54_data.h"   // current_sensor_data -- the shared struct this server reads from
+#include "web_update.h"
+#include "app_wifi_prov.h"
+#include "web_server.h"
+
+#ifndef FW_COMMIT_HASH
+#define FW_COMMIT_HASH "unknown"
+#endif
+#ifndef FW_BUILD_TIME
+#define FW_BUILD_TIME "unknown"
+#endif
 
 static const char *TAG = "WEB_SERVER";
+
+#define SETUP_URL "http://192.168.4.1/setup"
+
+static esp_err_t redirect_to_setup(httpd_req_t *req)
+{
+    httpd_resp_set_status(req, "302 Found");
+    httpd_resp_set_hdr(req, "Location", SETUP_URL);
+    return httpd_resp_send(req, NULL, 0);
+}
+
+static esp_err_t not_found_redirect(httpd_req_t *req, httpd_err_code_t err)
+{
+    return redirect_to_setup(req);
+}
 
 /**
  * @brief HTTP handler for GET / -- serves the dashboard's HTML page.
@@ -78,6 +102,7 @@ static esp_err_t root_handler(httpd_req_t *req)
         "h1 { font-size: 28px; }"
         ".card { border: 1px solid #ccc; border-radius: 8px; padding: 15px; margin-bottom: 15px; }"
         ".value { font-size: 24px; font-weight: bold; }"
+        ".fw { font-size: 11px; color: #888; margin-top: 20px; }"
         "</style>"
         "</head>"
 
@@ -108,6 +133,7 @@ static esp_err_t root_handler(httpd_req_t *req)
         "<p>Location: <span id='location'>--</span></p>"
         "<p>Last Reading: <span id='timestamp'>--</span></p>"
         "</div>"
+        "<p class='fw'>Firmware: " FW_COMMIT_HASH " &middot; Built: " FW_BUILD_TIME "</p>"
 
         "<script>"
         "function updateData() {"
@@ -210,48 +236,37 @@ static esp_err_t data_handler(httpd_req_t *req)
 }
 
 /**
- * @brief Starts the local HTTP server and registers the / and /data
- *        routes. Called once from node_main.c's app_main(),
- *        unconditionally (regardless of whether networking/MQTT setup
- *        succeeded), so this dashboard is available whenever the node has
- *        any IP connectivity at all.
- *
- * Uses esp_http_server's default configuration (HTTPD_DEFAULT_CONFIG()) --
- * i.e. default port (80), default max URI handlers, default stack size,
- * etc. -- rather than customizing any server settings.
- *
- * NOTE: if httpd_start() fails, this function does nothing further (no
- * else branch) -- no error is logged, and the caller (app_main()) has no
- * way to know the web server didn't come up, since this function has a
- * void return type. If the dashboard is unexpectedly unreachable on a
- * given node, this silent-failure path is worth checking first.
- *
- * NOTE: the local `server` handle is not stored anywhere outside this
- * function (e.g. in a static/module-level variable), so there is
- * currently no way for any other code to later call httpd_stop() on this
- * server -- once started, it runs for the lifetime of the firmware.
+ * Starts the one HTTP server used by the firmware. Routes depend on mode
+ * (see table above); /update is available in both. Returns NULL on failure.
  */
-void start_webserver(void)
+httpd_handle_t web_server_start(web_server_mode_t mode)
 {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+    config.stack_size = 8192;
+    config.recv_wait_timeout = 30;
+    config.lru_purge_enable = true;   // drop idle sockets so uploads can't be starved
+
     httpd_handle_t server = NULL;
-    if (httpd_start(&server, &config) == ESP_OK) {
-        httpd_uri_t root = {
-            .uri = "/",
-            .method = HTTP_GET,
-            .handler = root_handler,
-            .user_ctx = NULL
-        };
-        httpd_register_uri_handler(server, &root);
-
-        httpd_uri_t data = {
-            .uri = "/data",
-            .method = HTTP_GET,
-            .handler = data_handler,
-            .user_ctx = NULL
-        };
-        httpd_register_uri_handler(server, &data);
-
-        ESP_LOGI(TAG, "Web server started");
+    if (httpd_start(&server, &config) != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to start web server");
+        return NULL;
     }
+
+    if (mode == WEB_SERVER_MODE_NORMAL) {
+        httpd_uri_t root = { .uri = "/",     .method = HTTP_GET, .handler = root_handler };
+        httpd_uri_t data = { .uri = "/data", .method = HTTP_GET, .handler = data_handler };
+        httpd_register_uri_handler(server, &root);
+        httpd_register_uri_handler(server, &data);
+    } else {
+        httpd_uri_t root = { .uri = "/", .method = HTTP_GET, .handler = redirect_to_setup };
+        httpd_register_uri_handler(server, &root);
+        app_wifi_prov_register_http(server);
+        httpd_register_err_handler(server, HTTPD_404_NOT_FOUND, not_found_redirect);
+    }
+
+    web_update_register(server);
+
+    ESP_LOGI(TAG, "Web server started (%s mode)",
+             mode == WEB_SERVER_MODE_SETUP ? "setup" : "normal");
+    return server;
 }

@@ -1,5 +1,6 @@
 # ESP-IDF build output
 build/
+build-docker/
 
 # Python virtual environments
 venv/
@@ -14,3 +15,8 @@ sdkconfig.old
 # Operating system files
 Thumbs.db
 .DS_Store
+
+# File wtih mqtt password
+main/secrets.h
+
+*.ignore

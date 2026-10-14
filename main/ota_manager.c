@@ -40,7 +40,25 @@
 #include "esp_partition.h"
 #include "esp_system.h"
 
+#include <stdatomic.h>
+
+#ifndef FW_COMMIT_HASH
+#define FW_COMMIT_HASH "unknown"
+#endif
+
 static const char *TAG = "UCM_OTA";
+
+static atomic_bool s_busy = false;
+
+bool ota_manager_try_begin(void)
+{
+    bool expected = false;
+    return atomic_compare_exchange_strong(&s_busy, &expected, true);
+}
+
+void ota_manager_end(void)     { atomic_store(&s_busy, false); }
+bool ota_manager_is_busy(void) { return atomic_load(&s_busy); }
+
 
 /**
  * @brief Initialize the OTA manager and report the current boot state.
@@ -177,7 +195,7 @@ esp_err_t ota_manager_confirm_running_image(void)
  *         next boot partition was selected. Normally the device restarts
  *         immediately after a successful update.
  */
-esp_err_t ota_manager_update(const char *firmware_url)
+esp_err_t do_http_update(const char *firmware_url)
 {
     if (firmware_url == NULL || firmware_url[0] == '\0') {
         ESP_LOGE(TAG, "OTA firmware URL is empty");
@@ -215,6 +233,7 @@ esp_err_t ota_manager_update(const char *firmware_url)
         .url = firmware_url,
         .timeout_ms = 10000,
         .keep_alive_enable = true,
+        .user_agent = "UCM-Node (" FW_COMMIT_HASH ")",
     };
 
     esp_http_client_handle_t client =
@@ -271,6 +290,14 @@ esp_err_t ota_manager_update(const char *firmware_url)
         esp_http_client_cleanup(client);
 
         return ESP_ERR_INVALID_SIZE;
+    }
+
+    int status = esp_http_client_get_status_code(client);
+    if (status != 200) {
+        ESP_LOGE(TAG, "Unexpected HTTP status: %d", status);
+        esp_http_client_close(client);
+        esp_http_client_cleanup(client);
+        return ESP_FAIL;
     }
 
     /*
@@ -429,4 +456,17 @@ esp_err_t ota_manager_update(const char *firmware_url)
      * Keep this here to satisfy the compiler.
      */
     return ESP_OK;
+}
+
+esp_err_t ota_manager_update(const char *firmware_url)
+{
+    if (!ota_manager_try_begin()) {
+        ESP_LOGW(TAG, "OTA update already in progress");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    esp_err_t err = do_http_update(firmware_url);
+
+    ota_manager_end();   // only reached on failure; success restarts the device
+    return err;
 }
