@@ -8,7 +8,7 @@ Run this in the root directory
 ```
 
 ## Update using web interface
-1. Go to http://<sensor ip>/update
+1. Go to `http://<sensor ip>/update`
 2. Enter username and password set in the secrets.h file.
 3. Select the bin file and upload it.
 
