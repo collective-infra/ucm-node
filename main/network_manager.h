@@ -9,9 +9,6 @@ typedef enum {
     NETWORK_WIFI
 } network_type_t;
 
-
 esp_err_t network_start(void);
-
-network_type_t network_get_type(void);
 
 #endif

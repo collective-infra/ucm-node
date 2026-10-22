@@ -28,7 +28,7 @@ idf_component_register(
     # If a new .c file is added to the project, it must be added here or
     # ESP-IDF's build system will not compile it in.
 
-    SRCS "node_main.c" "sen54_data.c" "web_server.c" "app_wifi_prov.c" "ethernet_manager.c" "ethernet_init.c" "network_manager.c" "mqtt_manager.c" "ota_manager.c"
+    SRCS "node_main.c" "sen54_data.c" "web_server.c" "app_wifi_prov.c" "ethernet_manager.c" "ethernet_init.c" "network_manager.c" "mqtt_manager.c" "ota_manager.c" "web_update.c" 
 
     # Directories searched for this component's own headers (e.g.
     # sen54_data.h, web_server.h, mqtt_manager.h, app_wifi_prov.h). "."

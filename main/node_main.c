@@ -377,25 +377,25 @@ void app_main(void)
 {
     ESP_LOGI(TAG, "ENTERED app_main");
 
-esp_err_t ret = nvs_flash_init();
+    esp_err_t ret = nvs_flash_init();
 
-if (ret == ESP_ERR_NVS_NO_FREE_PAGES ||
-    ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES ||
+        ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
 
-    ESP_ERROR_CHECK(nvs_flash_erase());
-    ret = nvs_flash_init();
-}
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
 
-ESP_ERROR_CHECK(ret);
+    ESP_ERROR_CHECK(ret);
 
-esp_err_t ota_result = ota_manager_init();
+    esp_err_t ota_result = ota_manager_init();
 
-if (ota_result != ESP_OK) {
-    ESP_LOGE(TAG, "OTA initialization failed: %s",
-             esp_err_to_name(ota_result));
-} else {
-    ESP_LOGI(TAG, "OTA manager initialized");
-}
+    if (ota_result != ESP_OK) {
+        ESP_LOGE(TAG, "OTA initialization failed: %s",
+                esp_err_to_name(ota_result));
+    } else {
+        ESP_LOGI(TAG, "OTA manager initialized");
+    }
 
     ESP_LOGI(TAG, "Starting UCM ESP32-P4 environmental node");
    
@@ -407,11 +407,8 @@ if (ota_result != ESP_OK) {
     esp_err_t network_result = network_start();
 
     if (network_result != ESP_OK) {
-
         ESP_LOGE(TAG, "Network initialization failed");
-
     } else {
-
         time_sync_start();
 
         char node_name[32] = {0};
@@ -439,42 +436,33 @@ if (ota_result != ESP_OK) {
         current_sensor_data.latitude = lat;
         current_sensor_data.longitude = lon;
 
-
-
         generate_node_id(
             current_sensor_data.node_id,
             sizeof(current_sensor_data.node_id)
         );
 
-        ESP_LOGI(TAG, "Node ID: %s",
-                 current_sensor_data.node_id);
+        ESP_LOGI(TAG, "Node ID: %s", current_sensor_data.node_id);
 
-// Note: MQTT startup/publish is only attempted here, inside the
-// network-success branch, since there is no point trying to connect to a
-// broker without a working network connection.
-if (mqtt_manager_start(current_sensor_data.node_id) == ESP_OK) {
-
-    mqtt_manager_publish_node_info(
-        &current_sensor_data
-    );
-
-} else {
-
-    ESP_LOGE(TAG, "MQTT startup failed");
-}
+        // Note: MQTT startup/publish is only attempted here, inside the
+        // network-success branch, since there is no point trying to connect to a
+        // broker without a working network connection.
+        if (mqtt_manager_start(current_sensor_data.node_id) == ESP_OK) {
+            mqtt_manager_publish_node_info(&current_sensor_data);
+        } else {
+            ESP_LOGE(TAG, "MQTT startup failed");
+        }
     }
 
+    web_server_start(WEB_SERVER_MODE_NORMAL);
+    esp_err_t ota_confirm_result = ota_manager_confirm_running_image();
 
-    start_webserver();
-esp_err_t ota_confirm_result = ota_manager_confirm_running_image();
-
-if (ota_confirm_result != ESP_OK) {
-    ESP_LOGE(TAG,
-             "OTA firmware confirmation failed: %s",
-             esp_err_to_name(ota_confirm_result));
-} else {
-    ESP_LOGI(TAG, "OTA firmware confirmed successfully");
-}
+    if (ota_confirm_result != ESP_OK) {
+        ESP_LOGE(TAG,
+                "OTA firmware confirmation failed: %s",
+                esp_err_to_name(ota_confirm_result));
+    } else {
+        ESP_LOGI(TAG, "OTA firmware confirmed successfully");
+    }
 
     xTaskCreate(
         sen5x_task,
@@ -485,11 +473,8 @@ if (ota_confirm_result != ESP_OK) {
         NULL
     );
 
-
     while (1) {
-
         vTaskDelay(pdMS_TO_TICKS(10000));
-
         ESP_LOGI(TAG, "Network Active...");
     }
 }
